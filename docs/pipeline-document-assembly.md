@@ -55,6 +55,8 @@ CREATE TABLE generated_applications (
     pdf_url             TEXT,                               -- Signed URL (1-hour expiry, regenerated on access)
     resume_text         TEXT,                               -- Plain text version of the final resume (for email drafter)
     resume_embedding    vector(1536),                       -- Embedding of resume_text for caching
+    job_embedding_snapshot vector(1536),                   -- Snapshot of job description embedding at generation time; used for cache matching (same vector space as job embeddings)
+    resume_summary      TEXT,                              -- LLM-generated 2-3 sentence summary of resume_text; consumed by Outreach CRM email drafter
 
     -- Caching
     cache_hit           BOOLEAN DEFAULT FALSE,
@@ -77,6 +79,9 @@ CREATE INDEX idx_apps_status ON generated_applications(user_id, status);
 CREATE INDEX idx_apps_job ON generated_applications(job_description_id);
 CREATE INDEX idx_apps_resume_emb ON generated_applications
     USING hnsw (resume_embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
+CREATE INDEX idx_apps_job_emb ON generated_applications
+    USING hnsw (job_embedding_snapshot vector_cosine_ops)
     WITH (m = 16, ef_construction = 64);
 ```
 
@@ -143,7 +148,7 @@ class GeneratedApplicationSummary(BaseModel):
     pdf_storage_path: str
     pdf_url: str
     tailored_content: dict
-    resume_text_summary: str       # First 500 chars of resume_text for email drafter
+    resume_text_summary: str       # LLM-generated 2-3 sentence summary stored in generated_applications.resume_summary; never a raw character truncation
 ```
 
 ---
@@ -331,11 +336,29 @@ def generate_application_task(self, application_id: str, template: str = "modern
         # ─── STEP 6: EMBED RESUME (for future cache matches) ───
         resume_vector = llm_client.embed(resume_text, user_id=app.user_id)
 
+        # ─── STEP 7: SUMMARIZE RESUME (for email drafter context) ───
+        # Haiku is sufficient here; truncation would lose achievements at the bottom.
+        resume_summary = llm_client.complete(
+            system_prompt=(
+                "Summarize the following resume in 2-3 sentences. "
+                "Focus on the candidate's most distinctive technical achievements and the roles they've held. "
+                "Return only the summary text — no labels, no markdown."
+            ),
+            user_prompt=resume_text,
+            model="claude-haiku-4-5-20251001",
+            max_tokens=200,
+            user_id=app.user_id,
+            task_type="summarize",
+            prompt_version="summarize_v1",
+        )
+
         db.update_application(application_id,
             pdf_storage_path=storage_path,
             pdf_url=pdf_url,
             resume_text=resume_text,
             resume_embedding=resume_vector,
+            job_embedding_snapshot=job.embedding,
+            resume_summary=resume_summary,
             status="completed",
             completed_at=datetime.utcnow(),
         )
@@ -350,16 +373,22 @@ def generate_application_task(self, application_id: str, template: str = "modern
         raise
 
 def _check_cache(self, job_embedding: list[float], user_id: UUID):
-    """Find a previously generated application with similar enough job description."""
+    """Find a previously generated application with a sufficiently similar job description.
+
+    Compares the incoming job embedding against job_embedding_snapshot on past applications —
+    both are produced by build_job_embedding_text() → text-embedding-3-small, so they live in
+    the same vector space and cosine similarity is meaningful. Do NOT compare against
+    resume_embedding, which is produced from a different text source and distribution.
+    """
     threshold = float(settings.CACHE_SIMILARITY_THRESHOLD)  # Default 0.88
 
     query = """
         SELECT * FROM generated_applications
         WHERE user_id = $1
           AND status = 'completed'
-          AND resume_embedding IS NOT NULL
-          AND 1 - (resume_embedding <=> $2::vector) > $3
-        ORDER BY 1 - (resume_embedding <=> $2::vector) DESC
+          AND job_embedding_snapshot IS NOT NULL
+          AND 1 - (job_embedding_snapshot <=> $2::vector) > $3
+        ORDER BY 1 - (job_embedding_snapshot <=> $2::vector) DESC
         LIMIT 1;
     """
     return db.fetch_one(query, [user_id, job_embedding, threshold])
@@ -411,8 +440,13 @@ def full_pipeline_task(self, application_id: str, url: str = None, raw_text: str
         )
         db.update_application(application_id, job_description_id=job.id)
 
-        # ─── HAND OFF TO GENERATE LOGIC (Steps 2-6 from generate_application_task) ───
-        # ... (identical logic: cache check → match → rewrite → render → embed)
+        db.update_application(application_id, job_description_id=job.id)
+
+        # ─── HAND OFF TO GENERATION PIPELINE (Steps 2-7) ───
+        # Shared logic lives in _run_generation_pipeline() — extracted from
+        # generate_application_task steps 2-7 (cache check → match → rewrite →
+        # render → embed → summarize). Never duplicate this logic inline.
+        _run_generation_pipeline(self, application_id, template)
 
     except Exception as e:
         db.update_application(application_id, status="failed", error_message=str(e)[:500])
@@ -757,15 +791,29 @@ This page combines the Matcher's job input with this module's generation status.
 
 Layout:
 1. **Top section:** Job input (owned by Semantic Matcher — `JobInput` component).
-2. **Middle section:** Generation status (owned by this module).
-3. **Bottom section:** Application history list.
+2. **Template picker:** Three cards side-by-side with thumbnail previews labelled "Modern", "Classic", and "Minimal". Default selection: Modern. User selects before clicking "Generate Resume". Persist the selection to `user_profiles.preferred_template` so it is pre-selected on future visits. The `template` field in `GenerateFromUrlRequest` is populated from this selection.
+3. **Middle section:** Generation status (owned by this module).
+4. **Bottom section:** Application history list.
 
 **Generation status component (`components/generate/GenerationStatus.tsx`):**
 
-- Shows a multi-step progress indicator: `Scraping → Extracting → Matching → Rewriting → Rendering → Complete`
+- Shows a multi-step progress indicator. Map internal DB status values to user-facing labels — never show raw status strings in the UI:
+
+  | DB `status` | Display label |
+  |---|---|
+  | `scraping` | "Reading the job posting" |
+  | `extracting` | "Analyzing what they're looking for" |
+  | `matching` | "Finding your best experience" |
+  | `rewriting` | "Tailoring your resume" |
+  | `rendering` | "Creating your PDF" |
+  | `completed` | "Your resume is ready" |
+  | `failed` | "Something went wrong" |
+
 - Each step lights up as the `status` field progresses.
 - Poll `GET /generate/application/{id}` every 3 seconds, OR subscribe via Supabase Realtime.
-- On `completed`: show PDF preview (embedded via `<iframe>` or PDF.js) + "Download" button + "Send to Hiring Manager" button (links to Outreach CRM).
+- On `completed`: show PDF preview + "Download" button + "Send to Hiring Manager" button (links to Outreach CRM).
+  - **Desktop (≥768px):** embed inline using PDF.js. `<iframe>` is acceptable fallback.
+  - **Mobile (<768px):** do not embed a PDF viewer — iOS Safari does not render PDF iframes inline. Instead show a full-width "View Resume" button opening the signed URL in a new tab, plus a "Download" button.
 - On `failed`: show error message + "Try Again" button.
 - On `cache_hit`: show a badge "Served from cache — a similar resume was generated previously" + "Regenerate" button.
 
@@ -788,6 +836,34 @@ interface GenerateStore {
     pollStatus: (id: string) => Promise<void>;
     fetchApplications: () => Promise<void>;
     regenerate: (id: string) => Promise<void>;
+}
+```
+
+### 10.3 Pipeline Progress Widget
+
+A persistent compact widget in the shared auth layout sidebar shows users where they stand across the full pipeline. Keeps the three-step flow (Vault → Resume → Outreach) visible at all times and drives re-engagement.
+
+```
+┌──────────────────────────────┐
+│ Your Pipeline                │
+│ Vault       12 nodes    ✓    │
+│ Last resume Acme · 2h ago ✓  │
+│ Outreach    5 sent · 2 ↩    │
+└──────────────────────────────┘
+```
+
+**Component:** `components/shared/PipelineStatus.tsx`
+
+Data is fetched once on layout mount from a new `GET /user/pipeline-status` endpoint (see below) and stored in a shared Zustand slice. Stale after 5 minutes; re-fetched on focus.
+
+**`GET /user/pipeline-status`** (add to backend, Auth: Required):
+
+```python
+# Returns a single aggregated summary — avoids three separate API calls on every page load
+{
+  "vault_node_count": int,
+  "last_application": { "company_name": str | None, "created_at": datetime } | None,
+  "outreach_counts": { "sent": int, "responded": int }
 }
 ```
 

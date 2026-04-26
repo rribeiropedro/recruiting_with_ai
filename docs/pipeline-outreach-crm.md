@@ -70,6 +70,9 @@ CREATE TABLE outreach_campaigns (
     --   "industry": "fintech"
     -- }
 
+    -- Error tracking
+    send_error              TEXT,                           -- Last send failure reason; cleared on successful send
+
     -- Follow-up tracking
     follow_up_count         INT DEFAULT 0,
     last_follow_up_at       TIMESTAMPTZ,
@@ -256,13 +259,16 @@ Errors: 401 if OAuth token expired (client should trigger re-auth)
 ```
 POST /user/oauth/gmail/initiate
 Auth: Required
+Body: { return_to?: string }   # Frontend URL to redirect back to after auth (e.g. /outreach/campaigns/{id})
 Returns: 200 + { auth_url: str }
-Action: Generate Google OAuth URL with state=user_id, redirect to it
+Action: Generate Google OAuth URL with state="{user_id}:{return_to_encoded}", redirect to it
 
 GET /user/oauth/gmail/callback?code={code}&state={state}
-Returns: 302 redirect to frontend with success/error query param
+Returns: 302 redirect to {return_to} (if present in state) or /settings/connections, with ?oauth=success|error query param
 Action: Exchange code for tokens, encrypt and store in user_profiles.gmail_oauth_token
 ```
+
+**`return_to` usage:** When the user triggers OAuth from within a campaign detail page (e.g. clicking "Send" when Gmail is not connected), the frontend passes `return_to=/outreach/campaigns/{id}`. After auth completes the user lands back on the same campaign, not on Settings. Always validate `return_to` is a relative path on the same origin before using it.
 
 ### 4.8 Outlook OAuth Flow (Same pattern)
 
@@ -377,9 +383,12 @@ class ContactFinder:
         """Fallback: search Apollo.io for contacts."""
         response = await httpx_client.post(
             "https://api.apollo.io/v1/mixed_people/search",
-            headers={"Content-Type": "application/json", "Cache-Control": "no-cache"},
+            headers={
+                "Content-Type": "application/json",
+                "Cache-Control": "no-cache",
+                "X-Api-Key": settings.APOLLO_API_KEY,  # Use header — body params are logged by Apollo's servers
+            },
             json={
-                "api_key": settings.APOLLO_API_KEY,
                 "q_organization_name": company_name,
                 "person_titles": ["Engineering Manager", "Hiring Manager", "Recruiter",
                                   "Head of Engineering", "VP Engineering"],
@@ -475,7 +484,7 @@ class EmailDrafter:
 
         try:
             # Search for recent news
-            news_results = await web_search(f"{company_name} recent news 2026")
+            news_results = await web_search(f"{company_name} recent news {datetime.now().year}")
             context["recent_news"] = [r["title"] for r in news_results[:3]]
 
             # Search for company info
@@ -515,7 +524,8 @@ class EmailDrafter:
                 break
 
         if not subject:
-            subject = f"Re: {role_title or 'Open Position'} — {user_name}"
+            # No "Re:" prefix — that implies a reply thread and is misleading on a cold email.
+            subject = f"{role_title or 'Open Position'} — {user_name}"
 
         body = "\n".join(lines[body_start:]).strip()
         return subject, body
@@ -697,11 +707,15 @@ def send_email_task(self, campaign_id: str, provider: str = "gmail", attach_resu
             email_sent_at=datetime.utcnow(),
             email_message_id=result.message_id,
             email_thread_id=result.thread_id,
+            send_error=None,
         )
     else:
-        # Don't retry — surface error to user
-        db.update_campaign(campaign_id, status="drafted")
-        # The API endpoint returns the error to the frontend
+        # Don't retry — persist error so the frontend can surface it via status polling.
+        # The task runs async; the originating HTTP request is long gone.
+        db.update_campaign(campaign_id,
+            status="drafted",
+            send_error=result.error,  # "token_expired" | "rate_limited" | "send_failed: ..."
+        )
 ```
 
 ---
@@ -757,9 +771,12 @@ A human reading this should not suspect it was generated."""
 **Scopes required:**
 
 ```python
+# MVP: request only the minimum scope needed to send.
+# Do NOT request gmail.readonly at this stage — it widens the OAuth consent screen,
+# increases friction, and may trigger Google's restricted-scope review.
+# Add gmail.readonly as an incremental scope request when reply detection ships.
 GMAIL_SCOPES = [
     "https://www.googleapis.com/auth/gmail.send",      # Send emails
-    "https://www.googleapis.com/auth/gmail.readonly",   # Reply detection (stretch)
 ]
 ```
 
@@ -811,12 +828,12 @@ Use Microsoft Graph subscriptions (`/subscriptions`) to watch for new messages i
 
 ### 9.3 Polling Fallback
 
-If push notifications are too complex for MVP, poll every 15 minutes:
+If push notifications are too complex for MVP, poll every 15 minutes. **This task requires a Celery Beat scheduler process** — add the `career-engine-beat` service to `render.yaml` (see `architecture.md` §9.4) and register the schedule:
 
 ```python
 @celery_app.task
 def check_replies_task():
-    """Periodic task — runs every 15 minutes."""
+    """Periodic task — runs every 15 minutes via Celery Beat."""
     sent_campaigns = db.get_campaigns_by_status("sent")
     for campaign in sent_campaigns:
         if not campaign.email_thread_id:
@@ -825,6 +842,14 @@ def check_replies_task():
         has_reply = gmail_check_thread(campaign.email_thread_id, campaign.email_sent_at)
         if has_reply:
             db.update_campaign(campaign.id, status="responded")
+
+# Register in celery_app.py:
+app.conf.beat_schedule = {
+    "check-replies-every-15-min": {
+        "task": "app.tasks.outreach_tasks.check_replies_task",
+        "schedule": 900,  # 15 minutes in seconds
+    },
+}
 ```
 
 ---
@@ -864,19 +889,64 @@ The main view. A drag-and-drop Kanban board with columns for each status.
 **DnD library:** Use `@dnd-kit/core` + `@dnd-kit/sortable` for accessible drag-and-drop.
 
 ```typescript
+// Valid status transitions — enforce in both frontend and backend
+const VALID_TRANSITIONS: Record<string, string[]> = {
+    drafted:           ["queued", "archived"],
+    queued:            ["sent", "drafted"],
+    sent:              ["responded", "meeting_scheduled", "rejected", "archived"],
+    responded:         ["meeting_scheduled", "rejected", "archived"],
+    meeting_scheduled: ["rejected", "archived"],
+    rejected:          ["archived"],
+    archived:          ["drafted"],
+};
+
+// On drag start: mark invalid drop targets so the user gets immediate visual feedback
+const handleDragStart = (event: DragStartEvent) => {
+    const campaign = getCampaignById(event.active.id as string);
+    setInvalidColumns(
+        ALL_STATUSES.filter(s => !VALID_TRANSITIONS[campaign.status]?.includes(s))
+    );
+};
+
+// Invalid columns: render with reduced opacity + a lock icon overlay.
+// On hover over an invalid column while dragging: show a tooltip
+// "Can't move here — {reason}" (e.g. "Can't move to Responded before sending").
+// On drop to invalid column: card snaps back with a brief shake animation.
+
 // On drop:
 const handleDragEnd = (event: DragEndEvent) => {
+    setInvalidColumns([]);
     const { active, over } = event;
     if (!over) return;
-    const newStatus = over.id as string;  // Column ID = status
+    const newStatus = over.id as string;
+    const campaign = getCampaignById(active.id as string);
+    if (!VALID_TRANSITIONS[campaign.status]?.includes(newStatus)) return;  // silently blocked already handled above
     updateCampaignStatus(active.id as string, newStatus);
 };
 ```
+
+**Empty state for Kanban (0 campaigns):**
+
+```
+No outreach campaigns yet.
+
+Generate a resume for a job, then click "Send to Hiring Manager"
+to start your first campaign.
+
+[→ Generate a resume]
+```
+
+Show this in place of the Kanban board when `campaigns.length === 0`. For individual empty columns, show a dashed card outline — not a blank column — so the drop target remains discoverable.
 
 **`app/(auth)/outreach/[id]/page.tsx`** — Campaign Detail
 
 - Full email preview (subject + body) with "Edit" button.
 - Contact info section with "Edit" button.
+- If `send_error` is set: show an inline error banner above the Send button explaining what went wrong and how to resolve it:
+  - `token_expired` → "Your Gmail connection expired. [Reconnect Gmail →]" (link initiates OAuth with `return_to` pointing back to this page)
+  - `rate_limited` → "Gmail is rate-limiting sends. Wait a few minutes and try again."
+  - `send_failed: ...` → "Send failed. Check your connection and try again."
+  Clear the banner once the user successfully sends.
 - "Send" button (big, primary) if status is `drafted` and contact_email exists.
 - "Regenerate Email" button.
 - PDF preview/download link.

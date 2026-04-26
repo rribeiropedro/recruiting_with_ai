@@ -77,12 +77,14 @@ This table defines which pipeline doc owns which files, routes, and tables. If t
 
 | Module | Pipeline Doc | Owns Routes | Owns Tables | Owns Services | Owns Tasks |
 |---|---|---|---|---|---|
-| Experience Vault | `pipeline-experience-vault.md` | `/vault/*` | `experience_nodes` | `embedder.py`, `matcher.py` (embedding half) | `embed_tasks.py`, `scrape_tasks.py` (bulk import) |
-| Semantic Matcher | `pipeline-semantic-matcher.md` | `/jobs/*` | `job_descriptions` | `scraper.py`, `matcher.py` (query half) | `scrape_tasks.py` (job scraping) |
+| Experience Vault | `pipeline-experience-vault.md` | `/vault/*` | `experience_nodes` | `embedder.py` | `embed_tasks.py`, `scrape_tasks.py` (bulk import) |
+| Semantic Matcher | `pipeline-semantic-matcher.md` | `/jobs/*` | `job_descriptions` | `scraper.py`, `matcher.py` | `scrape_tasks.py` (job scraping) |
 | Document Assembly | `pipeline-document-assembly.md` | `/generate/*` | `generated_applications` | `rewriter.py`, `renderer.py` | `generate_tasks.py` |
 | Outreach CRM | `pipeline-outreach-crm.md` | `/outreach/*`, `/user/oauth/*` | `outreach_campaigns` | `email_drafter.py`, `email_sender.py`, `contact_finder.py` | `outreach_tasks.py` |
 
 **Shared ownership (this doc):** `user_profiles`, `llm_usage`, `auth middleware`, `celery_app.py`, `config.py`, `dependencies.py`, `main.py`.
+
+**Note on `matcher.py`:** Fully owned by Semantic Matcher. Experience Vault's `embedder.py` owns all node embedding logic. `matcher.py` owns only the similarity query interface. These are distinct responsibilities — no shared state, no co-editing. If a change touches both node embedding and similarity queries, it must be split across `embedder.py` and `matcher.py` with a coordinated PR, not merged into a single shared file.
 
 ### 2.3 Tech Stack — Definitive Choices
 
@@ -526,6 +528,14 @@ services:
     dockerContext: services/api
     dockerTarget: worker
     dockerCommand: celery -A app.tasks.celery_app worker -Q heavy --concurrency=2
+
+  - type: worker
+    name: career-engine-beat
+    runtime: docker
+    dockerfilePath: services/api/Dockerfile
+    dockerContext: services/api
+    dockerTarget: worker
+    dockerCommand: celery -A app.tasks.celery_app beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
 
   - type: redis
     name: career-engine-redis

@@ -357,7 +357,7 @@ def build_embedding_text(node) -> str:
 | Queue | `heavy` |
 | Typical duration | 30-120s |
 | Retry policy | 1 retry |
-| Idempotent | No — check for existing import before re-running |
+| Idempotent | Yes — deduplicated by `(user_id, storage_path)` unique constraint |
 
 **Logic:**
 
@@ -365,9 +365,19 @@ def build_embedding_text(node) -> str:
 2. Extract text using `pdfplumber` (preferred) or `PyMuPDF`.
 3. Call Claude Sonnet with `BULK_IMPORT_SYSTEM_PROMPT` to decompose into nodes.
 4. Parse the JSON response into a list of node objects.
-5. For each node: insert a row with `source = 'bulk_import'`, then chain `tag_node_task | embed_node_task`.
+5. For each node: check for an existing row with `(user_id, storage_path, source='bulk_import')` — if found, skip to avoid duplicates on retry. Otherwise insert with `source = 'bulk_import'`, then chain `tag_node_task | embed_node_task`.
 6. Use a Celery `chord` to track completion of all child tasks.
 7. Update the bulk import status to `completed` with `nodes_created` count.
+
+**Deduplication:** Add a unique partial index to guard against duplicate imports on retry:
+
+```sql
+CREATE UNIQUE INDEX idx_nodes_bulk_import_dedup
+    ON experience_nodes (user_id, (metadata->>'storage_path'))
+    WHERE source = 'bulk_import';
+```
+
+Store the `storage_path` as `metadata->>'storage_path'` on each node created by a bulk import so the index can enforce uniqueness.
 
 **Failure handling:**
 
@@ -447,8 +457,29 @@ CRITICAL RULES:
 
 **`app/(auth)/vault/page.tsx`** — Node list view
 
+**Empty state (0 nodes):**
+
+Show a centered explanation panel — not a blank screen:
+
+```
+Your Vault is empty
+
+Instead of one static resume, your Vault stores each project, role,
+and achievement separately. For every job you apply to, we pick the
+5 most relevant pieces and tailor them to that job's language.
+
+[+ Add your first experience]   [Import from resume PDF]
+```
+
+This explanation is shown only when `nodes.length === 0`. Once the user has at least one node, replace it with the normal list.
+
+**Normal state (≥1 nodes):**
+
 - Display all non-archived nodes in a card grid or list.
-- Each card shows: title, organization, role, date range, node type badge, tags as pills, embedding status indicator (green dot = embedded, yellow dot = processing, red dot = failed).
+- Each card shows: title, organization, role, date range, node type badge, tags as pills.
+- **Embedding status:** Only show a status indicator when something requires user attention. Do not show a green "embedded" dot as a routine UI element — it surfaces internal pipeline state that users don't care about. Show only:
+  - A subtle spinner (animated ring) on the card for up to 30 seconds after creation while processing.
+  - A red "!" badge if embedding permanently failed, with a tooltip "Processing failed — this node won't be matched to jobs. Try editing and saving again."
 - Filter bar: dropdown for `node_type`, text search input.
 - Pagination: "Load more" button (cursor-based).
 - Actions: "Add Node" button → modal or new page. "Import Resume" button → file upload modal.
@@ -457,6 +488,10 @@ CRITICAL RULES:
 
 - Fields: title (text), organization (text), role (text), start date (date picker), end date (date picker + "ongoing" checkbox), description (textarea), bullet points (dynamic list — add/remove bullets), node type (dropdown).
 - Validation: client-side via `zod` matching the Pydantic schema.
+- **Granularity helper text** — shown inline beneath relevant fields to prevent the most common mistake (creating one giant "work experience" node instead of per-project nodes):
+  - Under **Title**: placeholder text `e.g. "Real-Time Analytics Dashboard"` (not "Software Engineer at Acme"). Helper: "Name the specific project or experience, not your job title."
+  - Under **Description**: "Describe this specific project or role — what you built, why it mattered."
+  - Below the form header: a dismissible callout: "One node = one distinct thing you built or did. If a job had three projects, create three nodes — we pick the most relevant ones for each application."
 - On submit: `POST /vault/nodes`. Show success toast. Redirect to vault list.
 
 **`app/(auth)/vault/[id]/page.tsx`** — Node edit view
@@ -469,8 +504,26 @@ CRITICAL RULES:
 
 - File upload dropzone (accept `.pdf` only, max 10MB).
 - Upload to Supabase Storage, then `POST /vault/bulk-import`.
-- Progress UI: poll `GET /vault/bulk-import/{task_id}` every 3 seconds. Show stages: "Uploading → Parsing resume → Creating nodes (3/7) → Complete".
-- On completion: redirect to vault list with a banner "7 nodes imported from resume".
+- Progress UI: poll `GET /vault/bulk-import/{task_id}` every 3 seconds. Show stages: "Uploading → Parsing resume → Analyzing experiences → Ready to review".
+
+**Review step (required before committing nodes):**
+
+After the LLM decomposition completes, do NOT immediately insert nodes into the Vault. Instead:
+
+1. Return the proposed nodes as a JSON array from a new `GET /vault/bulk-import/{task_id}/preview` endpoint.
+2. Show the user a review screen with one editable card per proposed node:
+   - Each card shows: title, organization, role, date range, node type, bullet points.
+   - Inline editing for all fields.
+   - A "Remove" button per card.
+   - A "Split into two nodes" action (for cases where the LLM combined two projects).
+3. At the bottom: "Import X nodes" primary button, "Cancel" link.
+4. On confirm: `POST /vault/bulk-import/{task_id}/commit` with the (possibly edited) node array. This triggers the actual DB inserts + tag/embed tasks.
+
+This prevents bad LLM decomposition from silently polluting the Vault. The review step is not optional — the user must explicitly confirm before nodes are created.
+
+**Backend additions required:**
+- `GET /vault/bulk-import/{task_id}/preview` — returns proposed nodes without inserting them; store the LLM output in a temp Redis key (TTL 30 min) keyed by `task_id`.
+- `POST /vault/bulk-import/{task_id}/commit` — accepts the reviewed node array and performs the actual inserts.
 
 ### 7.2 Zustand Store
 
