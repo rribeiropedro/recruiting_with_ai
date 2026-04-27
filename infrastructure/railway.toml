@@ -1,0 +1,39 @@
+# ── Career Engine — Railway Reference Configuration ───────────────────────────
+# Railway has no single multi-service blueprint file (unlike render.yaml).
+# Create each service below in the Railway dashboard, all pointing to this repo.
+# All application services share the same Dockerfile with different targets.
+#
+# Dashboard settings for every service:
+#   Root Directory  : (repo root)
+#   Dockerfile Path : services/api/Dockerfile
+#   Docker Context  : services/api
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ─── career-engine-api (Web Service) ─────────────────────────────────────────
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "services/api/Dockerfile"
+dockerContext = "services/api"
+buildTarget = "api"
+
+[deploy]
+healthcheckPath = "/health"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
+# ─── career-engine-worker-default (Worker service — duplicate in dashboard) ───
+#   buildTarget  : worker
+#   startCommand : celery -A app.tasks.celery_app worker -Q default --concurrency=4
+
+# ─── career-engine-worker-heavy (Worker service) ─────────────────────────────
+#   buildTarget  : worker
+#   startCommand : celery -A app.tasks.celery_app worker -Q heavy --concurrency=2
+
+# ─── career-engine-beat (Scheduler service) ──────────────────────────────────
+#   buildTarget  : worker
+#   startCommand : celery -A app.tasks.celery_app beat --loglevel=info
+
+# ─── Redis ────────────────────────────────────────────────────────────────────
+# Add Railway's managed Redis plugin to the project.
+# Railway injects $REDIS_URL into all services automatically — no manual config.
+# Set maxmemory-policy to allkeys-lru in the Redis plugin settings.

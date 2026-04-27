@@ -1,0 +1,84 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg15
+    environment:
+      POSTGRES_USER: career_engine
+      POSTGRES_PASSWORD: career_engine
+      POSTGRES_DB: career_engine
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U career_engine"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ../services/api
+      dockerfile: Dockerfile
+      target: api
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../services/api/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ../services/api:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  worker-default:
+    build:
+      context: ../services/api
+      dockerfile: Dockerfile
+      target: worker
+    env_file:
+      - ../services/api/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ../services/api:/app
+    command: celery -A app.tasks.celery_app worker -Q default --concurrency=4 --loglevel=info
+
+  worker-heavy:
+    build:
+      context: ../services/api
+      dockerfile: Dockerfile
+      target: worker
+    env_file:
+      - ../services/api/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ../services/api:/app
+    command: celery -A app.tasks.celery_app worker -Q heavy --concurrency=2 --loglevel=info
+
+volumes:
+  postgres_data:
+  redis_data:

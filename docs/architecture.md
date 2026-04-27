@@ -108,7 +108,7 @@ This table defines which pipeline doc owns which files, routes, and tables. If t
 | Email Verification | Hunter.io / Apollo.io | Latest | Discover and verify hiring manager emails. |
 | OAuth Email Sending | Google Gmail API / Microsoft Graph API | Latest | Send from user's own inbox via OAuth 2.0 consent. |
 | Containerization | Docker | Latest | Single Dockerfile for API + workers. Multi-stage build for minimal image size. |
-| Hosting (Backend) | Render | N/A | Private networking for API ↔ Worker ↔ Redis. Managed Redis add-on. |
+| Hosting (Backend) | Railway | N/A | Private networking for API ↔ Worker ↔ Redis. Managed Redis plugin. No cold starts on Starter plan ($5/mo). |
 | Hosting (Frontend) | Vercel | N/A | Edge routing, preview deployments, environment variable management. |
 
 ### 2.4 Repository Structure
@@ -501,52 +501,30 @@ Single Dockerfile, multi-target (API + Worker). Shared base installs WeasyPrint 
 | `ENCRYPTION_KEY` | API + Workers |
 | `CACHE_SIMILARITY_THRESHOLD` | Workers (default 0.88) |
 
-### 9.4 Render Blueprint
+### 9.4 Railway Configuration
 
-```yaml
-services:
-  - type: web
-    name: career-engine-api
-    runtime: docker
-    dockerfilePath: services/api/Dockerfile
-    dockerContext: services/api
-    dockerTarget: api
-    healthCheckPath: /health
+Railway has no single multi-service blueprint file. Create each service in the Railway dashboard pointing to this repo. All four application services share the same Dockerfile with different build targets and start commands. Config reference: `infrastructure/railway.toml`.
 
-  - type: worker
-    name: career-engine-worker-default
-    runtime: docker
-    dockerfilePath: services/api/Dockerfile
-    dockerContext: services/api
-    dockerTarget: worker
-    dockerCommand: celery -A app.tasks.celery_app worker -Q default --concurrency=4
+**Services to create in the Railway dashboard:**
 
-  - type: worker
-    name: career-engine-worker-heavy
-    runtime: docker
-    dockerfilePath: services/api/Dockerfile
-    dockerContext: services/api
-    dockerTarget: worker
-    dockerCommand: celery -A app.tasks.celery_app worker -Q heavy --concurrency=2
+| Service Name | Type | Build Target | Start Command |
+|---|---|---|---|
+| `career-engine-api` | Web | `api` | *(Dockerfile CMD)* |
+| `career-engine-worker-default` | Worker | `worker` | `celery -A app.tasks.celery_app worker -Q default --concurrency=4` |
+| `career-engine-worker-heavy` | Worker | `worker` | `celery -A app.tasks.celery_app worker -Q heavy --concurrency=2` |
+| `career-engine-beat` | Worker | `worker` | `celery -A app.tasks.celery_app beat --loglevel=info` |
 
-  - type: worker
-    name: career-engine-beat
-    runtime: docker
-    dockerfilePath: services/api/Dockerfile
-    dockerContext: services/api
-    dockerTarget: worker
-    dockerCommand: celery -A app.tasks.celery_app beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+For every service set:
+- Dockerfile path: `services/api/Dockerfile`
+- Docker context: `services/api`
+- Health check path (API only): `/health`
 
-  - type: redis
-    name: career-engine-redis
-    plan: starter
-    maxmemoryPolicy: allkeys-lru
-```
+Add Railway's managed **Redis plugin** to the project — Railway injects `$REDIS_URL` into all services automatically. Set `maxmemory-policy` to `allkeys-lru` in the Redis plugin settings.
 
 ### 9.5 CI/CD
 
 - **On PR:** `pytest` (unit + integration), `ruff`, `mypy`, `npm run lint` + `npm run build`.
-- **On merge to `main`:** Auto-deploy API + workers to Render. Auto-deploy frontend to Vercel.
+- **On merge to `main`:** Railway auto-deploys all connected services. Vercel auto-deploys frontend.
 
 ---
 
