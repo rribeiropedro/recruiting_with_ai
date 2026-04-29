@@ -1,6 +1,8 @@
 import asyncio
+
 import asyncpg
 from supabase import create_client
+
 from app.config import settings
 
 
@@ -66,7 +68,7 @@ async def test_shared_tables():
     found = {row["tablename"] for row in tables}
     await conn.close()
     missing = {"user_profiles", "llm_usage"} - found
-    assert not missing, f"Missing tables: {missing} — run 00001_shared_tables.sql in Supabase SQL Editor"
+    assert not missing, f"Missing tables: {missing} — run 00001_shared_tables.sql"
     print("✓ Shared tables exist (user_profiles, llm_usage)")
 
 
