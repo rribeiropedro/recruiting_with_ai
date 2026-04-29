@@ -17,7 +17,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Career Engine API", version="2.0.0")
 
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
     app.add_middleware(
         CORSMiddleware,
@@ -33,7 +33,7 @@ def create_app() -> FastAPI:
     app.include_router(outreach.router, prefix="/outreach", tags=["outreach"])
 
     @app.get("/health")
-    async def health():
+    async def health() -> dict[str, str]:
         return {"status": "ok", "db": "connected", "redis": "connected"}
 
     return app
