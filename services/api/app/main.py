@@ -31,6 +31,7 @@ def create_app() -> FastAPI:
     app.include_router(jobs.router, prefix="/jobs", tags=["jobs"])
     app.include_router(generate.router, prefix="/generate", tags=["generate"])
     app.include_router(outreach.router, prefix="/outreach", tags=["outreach"])
+    app.include_router(outreach.oauth_router, prefix="/user", tags=["oauth"])
 
     @app.get("/health")
     async def health() -> dict[str, str]:
