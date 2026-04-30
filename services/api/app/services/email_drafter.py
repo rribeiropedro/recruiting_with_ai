@@ -80,7 +80,7 @@ class EmailDrafter:
 
         cache_key = f"company_ctx:{company_name.lower().replace(' ', '_')}"
         try:
-            r = _get_redis()  # type: ignore[no-untyped-call]
+            r = _get_redis()
             cached = await r.get(cache_key)
             if cached:
                 result: dict[str, Any] = json.loads(cached)
