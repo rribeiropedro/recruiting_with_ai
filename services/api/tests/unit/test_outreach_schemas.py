@@ -1,6 +1,7 @@
 """Unit tests for Pydantic request/response schemas (app/schemas/outreach.py)."""
-import pytest
 from uuid import uuid4
+
+import pytest
 from pydantic import ValidationError
 
 

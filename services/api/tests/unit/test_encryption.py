@@ -1,18 +1,18 @@
 """Unit tests for OAuth token encryption helpers (app/utils/encryption.py)."""
-import pytest
-from cryptography.fernet import Fernet
 from unittest.mock import patch
+
+from cryptography.fernet import Fernet
 
 
 class TestEncryptOAuthToken:
     def test_roundtrip_returns_original_data(self):
-        from app.utils.encryption import encrypt_oauth_token, decrypt_oauth_token
+        from app.utils.encryption import decrypt_oauth_token, encrypt_oauth_token
 
         data = {"access_token": "tok123", "refresh_token": "ref456"}
         assert decrypt_oauth_token(encrypt_oauth_token(data)) == data
 
     def test_complex_payload_roundtrip(self):
-        from app.utils.encryption import encrypt_oauth_token, decrypt_oauth_token
+        from app.utils.encryption import decrypt_oauth_token, encrypt_oauth_token
 
         data = {
             "access_token": "ya29.very-long-access-token",
@@ -60,14 +60,14 @@ class TestDecryptOAuthToken:
         assert decrypt_oauth_token("not-fernet-data-at-all") is None
 
     def test_tampered_ciphertext_returns_none(self):
-        from app.utils.encryption import encrypt_oauth_token, decrypt_oauth_token
+        from app.utils.encryption import decrypt_oauth_token, encrypt_oauth_token
 
         encrypted = encrypt_oauth_token({"access_token": "tok"})
         tampered = encrypted[:-4] + "XXXX"
         assert decrypt_oauth_token(tampered) is None
 
     def test_wrong_key_returns_none(self):
-        from app.utils.encryption import encrypt_oauth_token, decrypt_oauth_token
+        from app.utils.encryption import decrypt_oauth_token, encrypt_oauth_token
 
         data = {"access_token": "tok123"}
         encrypted = encrypt_oauth_token(data)

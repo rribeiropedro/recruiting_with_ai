@@ -3,6 +3,8 @@ Root conftest — set env vars before any app module is imported so that
 pydantic-settings can instantiate Settings() successfully.
 """
 import os
+
+import pytest
 from cryptography.fernet import Fernet
 
 TEST_ENCRYPTION_KEY: str = Fernet.generate_key().decode()
@@ -21,8 +23,6 @@ os.environ.setdefault("HUNTER_API_KEY", "test-hunter-key")
 os.environ.setdefault("APOLLO_API_KEY", "test-apollo-key")
 os.environ.setdefault("GOOGLE_OAUTH_CLIENT_ID", "test-google-client-id")
 os.environ.setdefault("GOOGLE_OAUTH_CLIENT_SECRET", "test-google-client-secret")
-
-import pytest
 
 
 @pytest.fixture(autouse=True)
