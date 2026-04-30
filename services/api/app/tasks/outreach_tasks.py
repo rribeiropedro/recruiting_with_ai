@@ -17,7 +17,7 @@ def _db() -> Any:
     return create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
 
 
-@celery_app.task(bind=True, max_retries=1, default_retry_delay=10, queue="default")  # type: ignore[misc]
+@celery_app.task(bind=True, max_retries=1, default_retry_delay=10, queue="default")  # type: ignore[untyped-decorator]
 def discover_contact_task(self: Any, campaign_id: str) -> None:
     db = _db()
 
@@ -70,7 +70,7 @@ def discover_contact_task(self: Any, campaign_id: str) -> None:
         logger.info("contact_not_found", campaign_id=campaign_id)
 
 
-@celery_app.task(bind=True, max_retries=2, default_retry_delay=5, queue="default")  # type: ignore[misc]
+@celery_app.task(bind=True, max_retries=2, default_retry_delay=5, queue="default")  # type: ignore[untyped-decorator]
 def draft_email_task(self: Any, campaign_id: str, tone: str = "conversational") -> None:
     db = _db()
 
@@ -138,7 +138,7 @@ def draft_email_task(self: Any, campaign_id: str, tone: str = "conversational") 
     logger.info("email_drafted", campaign_id=campaign_id)
 
 
-@celery_app.task(bind=True, max_retries=0, queue="email")  # type: ignore[misc]
+@celery_app.task(bind=True, max_retries=0, queue="email")  # type: ignore[untyped-decorator]
 def send_email_task(
     self: Any, campaign_id: str, provider: str = "gmail", attach_resume: bool = True
 ) -> None:
@@ -234,7 +234,7 @@ def send_email_task(
         logger.error("email_send_failed", campaign_id=campaign_id, error=result.error)
 
 
-@celery_app.task(queue="default")  # type: ignore[misc]
+@celery_app.task(queue="default")  # type: ignore[untyped-decorator]
 def check_replies_task() -> None:
     """Periodic task — runs every 15 minutes via Celery Beat."""
     db = _db()
