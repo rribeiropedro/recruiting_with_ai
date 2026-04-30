@@ -45,7 +45,7 @@ class EmailSender:
         if not token_data:
             return SendResult(success=False, error="token_expired")
 
-        creds = Credentials(
+        creds = Credentials(  # type: ignore[no-untyped-call]
             token=token_data.get("access_token"),
             refresh_token=token_data.get("refresh_token"),
             token_uri="https://oauth2.googleapis.com/token",
@@ -55,7 +55,7 @@ class EmailSender:
 
         if creds.expired and creds.refresh_token:
             try:
-                creds.refresh(Request())
+                creds.refresh(Request())  # type: ignore[no-untyped-call]
                 new_token = {
                     "access_token": creds.token,
                     "refresh_token": creds.refresh_token,
@@ -101,7 +101,7 @@ class EmailSender:
 
     async def send_outlook(
         self,
-        user_id,
+        user_id: Any,
         user_email: str,
         outlook_oauth_token: str | None,
         to_email: str,
@@ -119,7 +119,7 @@ class EmailSender:
 
         access_token = token_data.get("access_token")
 
-        payload: dict = {
+        payload: dict[str, Any] = {
             "message": {
                 "subject": subject,
                 "body": {"contentType": "Text", "content": body},
