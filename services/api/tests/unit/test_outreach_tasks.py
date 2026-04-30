@@ -5,8 +5,6 @@ broker/result-backend connections — run() calls the function body directly
 with the task object as self, bypassing all transport infrastructure.
 """
 from unittest.mock import AsyncMock, MagicMock, patch
-import pytest
-
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
 
@@ -72,7 +70,9 @@ def _make_db(campaign=None, app_data=None, job=None, profile=None) -> MagicMock:
     def _get_table(name: str) -> MagicMock:
         if name not in table_mocks:
             m = MagicMock()
-            m.select.return_value.eq.return_value.single.return_value.execute.return_value.data = rows.get(name)
+            m.select.return_value.eq.return_value.single.return_value.execute.return_value.data = (
+                rows.get(name)
+            )
             m.update.return_value.eq.return_value.execute.return_value.data = None
             table_mocks[name] = m
         return table_mocks[name]
@@ -99,8 +99,8 @@ class TestSendEmailTask:
         attach_resume: bool = False,
         send_result=None,
     ) -> MagicMock:
-        from app.tasks.outreach_tasks import send_email_task
         from app.services.email_sender import SendResult, email_sender
+        from app.tasks.outreach_tasks import send_email_task
 
         db = _make_db(campaign=campaign, profile=_profile(), app_data=_app())
         result = send_result or SendResult(success=True, message_id="msg-1", thread_id="t-1")
@@ -197,8 +197,8 @@ class TestSendEmailTask:
 class TestDiscoverContactTask:
 
     def _run(self, campaign: dict, contact_result) -> MagicMock:
-        from app.tasks.outreach_tasks import discover_contact_task
         from app.services.contact_finder import contact_finder
+        from app.tasks.outreach_tasks import discover_contact_task
 
         db = _make_db(campaign=campaign, app_data=_app(), job=_job())
 
@@ -241,8 +241,8 @@ class TestDiscoverContactTask:
 class TestDraftEmailTask:
 
     def _run(self, campaign: dict, draft_result=None, raise_exc=None) -> MagicMock:
-        from app.tasks.outreach_tasks import draft_email_task
         from app.services.email_drafter import email_drafter
+        from app.tasks.outreach_tasks import draft_email_task
 
         db = _make_db(campaign=campaign, app_data=_app(), job=_job(), profile=_profile())
         mock_draft = (

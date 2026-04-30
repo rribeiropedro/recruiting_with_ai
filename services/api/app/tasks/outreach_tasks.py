@@ -1,12 +1,13 @@
+from datetime import UTC, datetime
+
 import structlog
-from datetime import datetime, timezone
 from supabase import create_client
 
-from .celery_app import app as celery_app
 from ..config import settings
 from ..services.contact_finder import contact_finder
 from ..services.email_drafter import email_drafter
 from ..services.email_sender import email_sender
+from .celery_app import app as celery_app
 
 logger = structlog.get_logger()
 
@@ -19,13 +20,27 @@ def _db():
 def discover_contact_task(self, campaign_id: str):
     db = _db()
 
-    campaign_row = db.table("outreach_campaigns").select("*").eq("id", campaign_id).single().execute()
+    campaign_row = (
+        db.table("outreach_campaigns").select("*").eq("id", campaign_id).single().execute()
+    )
     campaign = campaign_row.data
 
-    app_row = db.table("generated_applications").select("*").eq("id", campaign["application_id"]).single().execute()
+    app_row = (
+        db.table("generated_applications")
+        .select("*")
+        .eq("id", campaign["application_id"])
+        .single()
+        .execute()
+    )
     app = app_row.data
 
-    job_row = db.table("job_descriptions").select("*").eq("id", app["job_description_id"]).single().execute()
+    job_row = (
+        db.table("job_descriptions")
+        .select("*")
+        .eq("id", app["job_description_id"])
+        .single()
+        .execute()
+    )
     job = job_row.data
 
     import asyncio
@@ -58,16 +73,36 @@ def discover_contact_task(self, campaign_id: str):
 def draft_email_task(self, campaign_id: str, tone: str = "conversational"):
     db = _db()
 
-    campaign_row = db.table("outreach_campaigns").select("*").eq("id", campaign_id).single().execute()
+    campaign_row = (
+        db.table("outreach_campaigns").select("*").eq("id", campaign_id).single().execute()
+    )
     campaign = campaign_row.data
 
-    app_row = db.table("generated_applications").select("*").eq("id", campaign["application_id"]).single().execute()
+    app_row = (
+        db.table("generated_applications")
+        .select("*")
+        .eq("id", campaign["application_id"])
+        .single()
+        .execute()
+    )
     app = app_row.data
 
-    job_row = db.table("job_descriptions").select("*").eq("id", app["job_description_id"]).single().execute()
+    job_row = (
+        db.table("job_descriptions")
+        .select("*")
+        .eq("id", app["job_description_id"])
+        .single()
+        .execute()
+    )
     job = job_row.data
 
-    profile_row = db.table("user_profiles").select("*").eq("user_id", campaign["user_id"]).single().execute()
+    profile_row = (
+        db.table("user_profiles")
+        .select("*")
+        .eq("user_id", campaign["user_id"])
+        .single()
+        .execute()
+    )
     profile = profile_row.data
 
     import asyncio
@@ -106,7 +141,9 @@ def draft_email_task(self, campaign_id: str, tone: str = "conversational"):
 def send_email_task(self, campaign_id: str, provider: str = "gmail", attach_resume: bool = True):
     db = _db()
 
-    campaign_row = db.table("outreach_campaigns").select("*").eq("id", campaign_id).single().execute()
+    campaign_row = (
+        db.table("outreach_campaigns").select("*").eq("id", campaign_id).single().execute()
+    )
     campaign = campaign_row.data
 
     if campaign["status"] in ("sent", "responded", "meeting_scheduled"):
@@ -114,21 +151,37 @@ def send_email_task(self, campaign_id: str, provider: str = "gmail", attach_resu
         return
 
     if not campaign.get("contact_email") or not campaign.get("email_body"):
-        db.table("outreach_campaigns").update({"status": "drafted"}).eq("id", campaign_id).execute()
+        db.table("outreach_campaigns").update(
+            {"status": "drafted"}
+        ).eq("id", campaign_id).execute()
         return
 
-    profile_row = db.table("user_profiles").select("*").eq("user_id", campaign["user_id"]).single().execute()
+    profile_row = (
+        db.table("user_profiles")
+        .select("*")
+        .eq("user_id", campaign["user_id"])
+        .single()
+        .execute()
+    )
     profile = profile_row.data
 
     attachment = None
     if attach_resume:
-        app_row = db.table("generated_applications").select("*").eq("id", campaign["application_id"]).single().execute()
+        app_row = (
+            db.table("generated_applications")
+            .select("*")
+            .eq("id", campaign["application_id"])
+            .single()
+            .execute()
+        )
         app = app_row.data
         if app.get("pdf_storage_path"):
             from supabase import create_client as _sc
             sb = _sc(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
             pdf_bytes = sb.storage.from_("resumes").download(app["pdf_storage_path"])
-            filename = f"{profile.get('full_name', 'Candidate').replace(' ', '_')}_Resume.pdf"
+            filename = (
+                f"{profile.get('full_name', 'Candidate').replace(' ', '_')}_Resume.pdf"
+            )
             attachment = (filename, pdf_bytes)
 
     import asyncio
@@ -164,7 +217,7 @@ def send_email_task(self, campaign_id: str, provider: str = "gmail", attach_resu
     if result.success:
         db.table("outreach_campaigns").update({
             "status": "sent",
-            "email_sent_at": datetime.now(timezone.utc).isoformat(),
+            "email_sent_at": datetime.now(UTC).isoformat(),
             "email_message_id": result.message_id,
             "email_thread_id": result.thread_id,
             "send_error": None,
