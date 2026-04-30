@@ -1,11 +1,13 @@
 import json
-from datetime import datetime
 from dataclasses import dataclass
+from typing import Any
+
 import structlog
 
-from ..services.llm_client import llm_client
-from ..prompts.draft_email import SYSTEM_PROMPT as DRAFT_EMAIL_SYSTEM_PROMPT, VERSION as DRAFT_EMAIL_VERSION
 from ..config import settings
+from ..prompts.draft_email import SYSTEM_PROMPT as DRAFT_EMAIL_SYSTEM_PROMPT
+from ..prompts.draft_email import VERSION as DRAFT_EMAIL_VERSION
+from ..services.llm_client import llm_client
 
 logger = structlog.get_logger()
 
@@ -25,14 +27,14 @@ def _get_redis():
 class EmailDraft:
     subject: str
     body: str
-    company_context: dict
+    company_context: dict[str, Any]
 
 
 class EmailDrafter:
     async def draft(
         self,
-        campaign_id,
-        application_id,
+        campaign_id: Any,
+        application_id: Any,
         contact_name: str | None,
         contact_title: str | None,
         company_name: str | None,
@@ -40,7 +42,7 @@ class EmailDrafter:
         industry: str | None,
         resume_summary: str,
         user_name: str,
-        user_id,
+        user_id: Any,
         tone: str = "conversational",
     ) -> EmailDraft:
         company_context = await self._research_company(company_name, industry)
@@ -99,7 +101,10 @@ class EmailDrafter:
         parts = [
             f"COMPANY: {kwargs['company_name'] or 'Unknown'}",
             f"COMPANY CONTEXT: {json.dumps(kwargs['company_context'])}",
-            f"HIRING MANAGER: {kwargs['contact_name'] or 'Hiring Manager'}, {kwargs['contact_title'] or 'unknown title'}",
+            (
+                f"HIRING MANAGER: {kwargs['contact_name'] or 'Hiring Manager'},"
+                f" {kwargs['contact_title'] or 'unknown title'}"
+            ),
             f"ROLE: {kwargs['role_title'] or 'the open position'}",
             f"CANDIDATE NAME: {kwargs['user_name']}",
             f"CANDIDATE RESUME SUMMARY:\n{kwargs['resume_summary']}",
@@ -107,7 +112,9 @@ class EmailDrafter:
         ]
         return "\n\n".join(parts)
 
-    def _parse_email(self, raw_response: str, role_title: str | None, user_name: str) -> tuple[str, str]:
+    def _parse_email(
+        self, raw_response: str, role_title: str | None, user_name: str
+    ) -> tuple[str, str]:
         lines = raw_response.strip().split("\n")
         subject = None
         body_start = 0

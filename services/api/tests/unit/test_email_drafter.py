@@ -1,7 +1,6 @@
 """Unit tests for EmailDrafter service (app/services/email_drafter.py)."""
 import json
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 
 class TestBuildPrompt:
@@ -210,7 +209,12 @@ class TestResearchCompany:
         from app.services.email_drafter import EmailDrafter
 
         drafter = EmailDrafter()
-        cached = {"company_name": "Acme", "industry": "saas", "recent_news": [], "company_description": ""}
+        cached = {
+            "company_name": "Acme",
+            "industry": "saas",
+            "recent_news": [],
+            "company_description": "",
+        }
 
         mock_redis = AsyncMock()
         mock_redis.get = AsyncMock(return_value=json.dumps(cached))
