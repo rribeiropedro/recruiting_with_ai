@@ -5,23 +5,22 @@ These tests use FastAPI's TestClient with a mocked Supabase client so they
 exercise the full request/response cycle — auth dependency, guard conditions,
 status-transition enforcement — without a live database.
 """
-import pytest
-from uuid import uuid4, UUID
 from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-
+from slowapi.util import get_remote_address
 
 TEST_USER_ID = uuid4()
 
 
 def _build_app() -> FastAPI:
-    from app.routers.outreach import router
     from app.dependencies import get_current_user
+    from app.routers.outreach import router
 
     app = FastAPI()
 
@@ -60,7 +59,10 @@ def _campaign(status: str = "drafted", **overrides) -> dict:
 def _mock_db_for_get(campaign: dict) -> MagicMock:
     """Return a mock Supabase client that serves a single campaign on SELECT."""
     db = MagicMock()
-    db.table.return_value.select.return_value.eq.return_value.eq.return_value.single.return_value.execute.return_value.data = campaign
+    (
+        db.table.return_value.select.return_value.eq.return_value.eq
+        .return_value.single.return_value.execute.return_value
+    ).data = campaign
     return db
 
 
@@ -165,7 +167,10 @@ class TestPatchCampaignStatusViaRouter:
     def test_unknown_campaign_returns_404(self):
         app = _build_app()
         db = MagicMock()
-        db.table.return_value.select.return_value.eq.return_value.eq.return_value.single.return_value.execute.return_value.data = None
+        (
+            db.table.return_value.select.return_value.eq.return_value.eq
+            .return_value.single.return_value.execute.return_value
+        ).data = None
 
         with patch("app.routers.outreach._db", return_value=db):
             resp = TestClient(app).patch(
@@ -176,16 +181,22 @@ class TestPatchCampaignStatusViaRouter:
         assert resp.status_code == 404
 
     def test_valid_transition_calls_db_update(self):
+        from datetime import datetime
+
         from app.schemas.outreach import CampaignResponse
-        from datetime import datetime, timezone
 
         campaign = _campaign(status="drafted")
         updated = {**campaign, "status": "queued"}
         app = _build_app()
 
         db = MagicMock()
-        db.table.return_value.select.return_value.eq.return_value.eq.return_value.single.return_value.execute.return_value.data = campaign
-        db.table.return_value.update.return_value.eq.return_value.execute.return_value.data = [updated]
+        (
+            db.table.return_value.select.return_value.eq.return_value.eq
+            .return_value.single.return_value.execute.return_value
+        ).data = campaign
+        (
+            db.table.return_value.update.return_value.eq.return_value.execute.return_value
+        ).data = [updated]
 
         enriched_response = CampaignResponse(
             id=campaign["id"],
@@ -294,7 +305,10 @@ class TestSendEmailGuards:
     def test_unknown_campaign_returns_404(self):
         app = _build_app()
         db = MagicMock()
-        db.table.return_value.select.return_value.eq.return_value.eq.return_value.single.return_value.execute.return_value.data = None
+        (
+            db.table.return_value.select.return_value.eq.return_value.eq
+            .return_value.single.return_value.execute.return_value
+        ).data = None
 
         with patch("app.routers.outreach._db", return_value=db):
             resp = TestClient(app, raise_server_exceptions=False).post(
@@ -334,7 +348,6 @@ class TestOAuthReturnToValidation:
         An absolute URL like 'https://evil.com' should be replaced with '/'.
         We test this by inspecting the state parameter embedded in the auth_url.
         """
-        from app.routers.outreach import VALID_TRANSITIONS
 
         import urllib.parse
 
