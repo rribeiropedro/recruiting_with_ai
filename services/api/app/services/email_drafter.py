@@ -15,11 +15,13 @@ logger = structlog.get_logger()
 _redis = None
 
 
-def _get_redis():
+def _get_redis() -> Any:
     global _redis
     if _redis is None:
         import redis.asyncio as aioredis
-        _redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        _redis = aioredis.from_url(  # type: ignore[no-untyped-call]
+            settings.REDIS_URL, decode_responses=True
+        )
     return _redis
 
 
@@ -70,20 +72,23 @@ class EmailDrafter:
         subject, body = self._parse_email(response, role_title, user_name)
         return EmailDraft(subject=subject, body=body, company_context=company_context)
 
-    async def _research_company(self, company_name: str | None, industry: str | None) -> dict:
+    async def _research_company(
+        self, company_name: str | None, industry: str | None
+    ) -> dict[str, Any]:
         if not company_name:
             return {}
 
         cache_key = f"company_ctx:{company_name.lower().replace(' ', '_')}"
         try:
-            r = _get_redis()
+            r = _get_redis()  # type: ignore[no-untyped-call]
             cached = await r.get(cache_key)
             if cached:
-                return json.loads(cached)
+                result: dict[str, Any] = json.loads(cached)
+                return result
         except Exception:
             pass
 
-        context = {
+        context: dict[str, Any] = {
             "company_name": company_name,
             "industry": industry,
             "recent_news": [],
@@ -97,7 +102,7 @@ class EmailDrafter:
 
         return context
 
-    def _build_prompt(self, **kwargs) -> str:
+    def _build_prompt(self, **kwargs: Any) -> str:
         parts = [
             f"COMPANY: {kwargs['company_name'] or 'Unknown'}",
             f"COMPANY CONTEXT: {json.dumps(kwargs['company_context'])}",
