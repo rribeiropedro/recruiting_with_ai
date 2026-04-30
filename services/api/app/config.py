@@ -1,5 +1,6 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Literal
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -24,4 +25,4 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:3000"
 
 
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]

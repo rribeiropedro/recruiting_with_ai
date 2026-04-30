@@ -1,5 +1,7 @@
-from uuid import UUID
 from datetime import date
+from typing import Any
+from uuid import UUID
+
 from pydantic import BaseModel
 
 
@@ -36,5 +38,5 @@ class GeneratedApplicationSummary(BaseModel):
     role_title: str | None
     pdf_storage_path: str
     pdf_url: str
-    tailored_content: dict
+    tailored_content: dict[str, Any]
     resume_text_summary: str

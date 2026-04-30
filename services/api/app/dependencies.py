@@ -1,6 +1,8 @@
 from uuid import UUID
-from fastapi import Depends, HTTPException, Header
+
 import jwt
+from fastapi import Header, HTTPException
+
 from .config import settings
 
 

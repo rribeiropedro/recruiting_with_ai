@@ -1,5 +1,6 @@
-from uuid import UUID
 from typing import Literal
+from uuid import UUID
+
 import anthropic
 import openai
 import structlog
@@ -16,7 +17,7 @@ PRICING = {
 
 
 class LLMClient:
-    def __init__(self):
+    def __init__(self) -> None:
         self._anthropic = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
         self._openai = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
@@ -53,7 +54,7 @@ class LLMClient:
             prompt_version=prompt_version,
             user_id=str(user_id) if user_id else None,
         )
-        return message.content[0].text
+        return message.content[0].text  # type: ignore[union-attr]
 
     async def embed(self, text: str, user_id: UUID | None = None) -> list[float]:
         response = await self._openai.embeddings.create(
