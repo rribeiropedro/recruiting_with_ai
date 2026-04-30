@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Any
 
 import httpx
 import structlog
@@ -19,7 +20,7 @@ class ContactResult:
 
 
 class ContactFinder:
-    def __init__(self):
+    def __init__(self) -> None:
         self._client = httpx.AsyncClient(timeout=15.0)
 
     async def discover(self, company_name: str, role_title: str) -> ContactResult | None:
@@ -40,7 +41,9 @@ class ContactFinder:
                 "https://api.hunter.io/v2/domain-search",
                 params={"company": company_name, "api_key": settings.HUNTER_API_KEY},
             )
-            return resp.json().get("data", {}).get("domain")
+            data: dict[str, Any] = resp.json().get("data", {})
+            domain: str | None = data.get("domain")
+            return domain
         except Exception as e:
             logger.warning("hunter_domain_search_failed", error=str(e))
             return None
