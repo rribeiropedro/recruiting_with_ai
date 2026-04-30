@@ -1,9 +1,11 @@
 import base64
 from dataclasses import dataclass
+from email import encoders
+from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email import encoders
+from typing import Any
+
 import structlog
 
 from ..utils.encryption import decrypt_oauth_token, encrypt_oauth_token
@@ -22,7 +24,7 @@ class SendResult:
 class EmailSender:
     async def send_gmail(
         self,
-        user_id,
+        user_id: Any,
         user_email: str,
         gmail_oauth_token: str | None,
         to_email: str,
@@ -30,13 +32,14 @@ class EmailSender:
         body: str,
         attachment: tuple[str, bytes] | None = None,
     ) -> SendResult:
-        from google.oauth2.credentials import Credentials
-        from google.auth.transport.requests import Request
         from google.auth.exceptions import RefreshError
+        from google.auth.transport.requests import Request
+        from google.oauth2.credentials import Credentials
         from googleapiclient.discovery import build
         from googleapiclient.errors import HttpError
-        from ..config import settings
         from supabase import create_client
+
+        from ..config import settings
 
         token_data = decrypt_oauth_token(gmail_oauth_token)
         if not token_data:
@@ -107,8 +110,8 @@ class EmailSender:
         attachment: tuple[str, bytes] | None = None,
     ) -> SendResult:
         import httpx
+
         from ..utils.encryption import decrypt_oauth_token
-        from ..config import settings
 
         token_data = decrypt_oauth_token(outlook_oauth_token)
         if not token_data:

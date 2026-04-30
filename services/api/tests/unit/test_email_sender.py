@@ -1,6 +1,5 @@
 """Unit tests for EmailSender service (app/services/email_sender.py)."""
 import base64
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
