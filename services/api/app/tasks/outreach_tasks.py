@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Any
 
 import structlog
 from supabase import create_client
@@ -12,12 +13,12 @@ from .celery_app import app as celery_app
 logger = structlog.get_logger()
 
 
-def _db():
+def _db() -> Any:
     return create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
 
 
-@celery_app.task(bind=True, max_retries=1, default_retry_delay=10, queue="default")
-def discover_contact_task(self, campaign_id: str):
+@celery_app.task(bind=True, max_retries=1, default_retry_delay=10, queue="default")  # type: ignore[misc]
+def discover_contact_task(self: Any, campaign_id: str) -> None:
     db = _db()
 
     campaign_row = (
@@ -69,8 +70,8 @@ def discover_contact_task(self, campaign_id: str):
         logger.info("contact_not_found", campaign_id=campaign_id)
 
 
-@celery_app.task(bind=True, max_retries=2, default_retry_delay=5, queue="default")
-def draft_email_task(self, campaign_id: str, tone: str = "conversational"):
+@celery_app.task(bind=True, max_retries=2, default_retry_delay=5, queue="default")  # type: ignore[misc]
+def draft_email_task(self: Any, campaign_id: str, tone: str = "conversational") -> None:
     db = _db()
 
     campaign_row = (
@@ -137,8 +138,10 @@ def draft_email_task(self, campaign_id: str, tone: str = "conversational"):
     logger.info("email_drafted", campaign_id=campaign_id)
 
 
-@celery_app.task(bind=True, max_retries=0, queue="email")
-def send_email_task(self, campaign_id: str, provider: str = "gmail", attach_resume: bool = True):
+@celery_app.task(bind=True, max_retries=0, queue="email")  # type: ignore[misc]
+def send_email_task(
+    self: Any, campaign_id: str, provider: str = "gmail", attach_resume: bool = True
+) -> None:
     db = _db()
 
     campaign_row = (
@@ -231,8 +234,8 @@ def send_email_task(self, campaign_id: str, provider: str = "gmail", attach_resu
         logger.error("email_send_failed", campaign_id=campaign_id, error=result.error)
 
 
-@celery_app.task(queue="default")
-def check_replies_task():
+@celery_app.task(queue="default")  # type: ignore[misc]
+def check_replies_task() -> None:
     """Periodic task — runs every 15 minutes via Celery Beat."""
     db = _db()
 
