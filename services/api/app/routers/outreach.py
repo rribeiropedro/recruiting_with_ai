@@ -1,4 +1,5 @@
 import urllib.parse
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -38,12 +39,14 @@ VALID_TRANSITIONS: dict[str, list[str]] = {
 }
 
 
-def _db():
+def _db() -> Any:
     return create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
 
 
 def _row_to_response(
-    row: dict, company_name: str | None = None, role_title: str | None = None
+    row: dict[str, Any],
+    company_name: str | None = None,
+    role_title: str | None = None,
 ) -> CampaignResponse:
     return CampaignResponse(
         id=row["id"],
@@ -65,7 +68,7 @@ def _row_to_response(
     )
 
 
-def _enrich_campaign(db, row: dict) -> CampaignResponse:
+def _enrich_campaign(db: Any, row: dict[str, Any]) -> CampaignResponse:
     company_name = None
     role_title = None
     try:
@@ -348,7 +351,7 @@ async def send_email(
 async def gmail_oauth_initiate(
     body: OAuthInitiateRequest,
     user_id: UUID = Depends(get_current_user),
-) -> dict:
+) -> dict[str, Any]:
     from google_auth_oauthlib.flow import Flow
 
     state_parts = [str(user_id)]
@@ -382,7 +385,7 @@ async def gmail_oauth_initiate(
 
 
 @oauth_router.get("/oauth/gmail/callback")
-async def gmail_oauth_callback(code: str, state: str):
+async def gmail_oauth_callback(code: str, state: str) -> RedirectResponse:
     from google_auth_oauthlib.flow import Flow
 
     parts = state.split(":", 1)
@@ -432,7 +435,7 @@ async def gmail_oauth_callback(code: str, state: str):
 async def outlook_oauth_initiate(
     body: OAuthInitiateRequest,
     user_id: UUID = Depends(get_current_user),
-) -> dict:
+) -> dict[str, Any]:
     state_parts = [str(user_id)]
     if body.return_to:
         safe_return = body.return_to if body.return_to.startswith("/") else "/"
@@ -456,7 +459,7 @@ async def outlook_oauth_initiate(
 
 
 @oauth_router.get("/oauth/outlook/callback")
-async def outlook_oauth_callback(code: str, state: str):
+async def outlook_oauth_callback(code: str, state: str) -> RedirectResponse:
     import httpx
 
     parts = state.split(":", 1)
