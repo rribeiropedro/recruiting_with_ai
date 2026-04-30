@@ -1,5 +1,6 @@
 import urllib.parse
 from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from slowapi import Limiter
@@ -10,17 +11,17 @@ from ..config import settings
 from ..dependencies import get_current_user
 from ..schemas.outreach import (
     CampaignCreateRequest,
+    CampaignListResponse,
+    CampaignResponse,
     CampaignUpdateRequest,
     DraftEmailRequest,
-    SendEmailRequest,
-    CampaignResponse,
-    CampaignListResponse,
     EmailDraftResponse,
-    SendResultResponse,
     OAuthInitiateRequest,
     OAuthStatusResponse,
+    SendEmailRequest,
+    SendResultResponse,
 )
-from ..utils.encryption import encrypt_oauth_token, decrypt_oauth_token
+from ..utils.encryption import encrypt_oauth_token
 
 router = APIRouter()
 oauth_router = APIRouter()
@@ -41,7 +42,9 @@ def _db():
     return create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
 
 
-def _row_to_response(row: dict, company_name: str | None = None, role_title: str | None = None) -> CampaignResponse:
+def _row_to_response(
+    row: dict, company_name: str | None = None, role_title: str | None = None
+) -> CampaignResponse:
     return CampaignResponse(
         id=row["id"],
         application_id=row["application_id"],
@@ -66,10 +69,22 @@ def _enrich_campaign(db, row: dict) -> CampaignResponse:
     company_name = None
     role_title = None
     try:
-        app_row = db.table("generated_applications").select("job_description_id").eq("id", row["application_id"]).single().execute()
+        app_row = (
+            db.table("generated_applications")
+            .select("job_description_id")
+            .eq("id", row["application_id"])
+            .single()
+            .execute()
+        )
         job_id = app_row.data.get("job_description_id")
         if job_id:
-            job_row = db.table("job_descriptions").select("company_name, role_title").eq("id", job_id).single().execute()
+            job_row = (
+                db.table("job_descriptions")
+                .select("company_name, role_title")
+                .eq("id", job_id)
+                .single()
+                .execute()
+            )
             company_name = job_row.data.get("company_name")
             role_title = job_row.data.get("role_title")
     except Exception:
@@ -114,7 +129,13 @@ async def list_campaigns(
 ) -> CampaignListResponse:
     db = _db()
 
-    query = db.table("outreach_campaigns").select("*").eq("user_id", str(user_id)).order("created_at", desc=True).limit(limit)
+    query = (
+        db.table("outreach_campaigns")
+        .select("*")
+        .eq("user_id", str(user_id))
+        .order("created_at", desc=True)
+        .limit(limit)
+    )
     if status:
         query = query.eq("status", status)
     if cursor:
@@ -123,7 +144,12 @@ async def list_campaigns(
     result = query.execute()
     rows = result.data or []
 
-    counts_result = db.table("outreach_campaigns").select("status").eq("user_id", str(user_id)).execute()
+    counts_result = (
+        db.table("outreach_campaigns")
+        .select("status")
+        .eq("user_id", str(user_id))
+        .execute()
+    )
     counts: dict[str, int] = {}
     for r in (counts_result.data or []):
         s = r["status"]
@@ -139,7 +165,14 @@ async def get_campaign(
     user_id: UUID = Depends(get_current_user),
 ) -> CampaignResponse:
     db = _db()
-    result = db.table("outreach_campaigns").select("*").eq("id", str(campaign_id)).eq("user_id", str(user_id)).single().execute()
+    result = (
+        db.table("outreach_campaigns")
+        .select("*")
+        .eq("id", str(campaign_id))
+        .eq("user_id", str(user_id))
+        .single()
+        .execute()
+    )
     if not result.data:
         raise HTTPException(status_code=404, detail="Campaign not found")
     return _enrich_campaign(db, result.data)
@@ -153,7 +186,14 @@ async def update_campaign(
 ) -> CampaignResponse:
     db = _db()
 
-    current = db.table("outreach_campaigns").select("*").eq("id", str(campaign_id)).eq("user_id", str(user_id)).single().execute()
+    current = (
+        db.table("outreach_campaigns")
+        .select("*")
+        .eq("id", str(campaign_id))
+        .eq("user_id", str(user_id))
+        .single()
+        .execute()
+    )
     if not current.data:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
@@ -172,7 +212,12 @@ async def update_campaign(
     if not update_data:
         return _enrich_campaign(db, current.data)
 
-    result = db.table("outreach_campaigns").update(update_data).eq("id", str(campaign_id)).execute()
+    result = (
+        db.table("outreach_campaigns")
+        .update(update_data)
+        .eq("id", str(campaign_id))
+        .execute()
+    )
     return _enrich_campaign(db, result.data[0])
 
 
@@ -186,18 +231,43 @@ async def draft_email(
 ) -> EmailDraftResponse:
     db = _db()
 
-    campaign_result = db.table("outreach_campaigns").select("*").eq("id", str(campaign_id)).eq("user_id", str(user_id)).single().execute()
+    campaign_result = (
+        db.table("outreach_campaigns")
+        .select("*")
+        .eq("id", str(campaign_id))
+        .eq("user_id", str(user_id))
+        .single()
+        .execute()
+    )
     if not campaign_result.data:
         raise HTTPException(status_code=404, detail="Campaign not found")
     campaign = campaign_result.data
 
-    app_result = db.table("generated_applications").select("*").eq("id", campaign["application_id"]).single().execute()
+    app_result = (
+        db.table("generated_applications")
+        .select("*")
+        .eq("id", campaign["application_id"])
+        .single()
+        .execute()
+    )
     app = app_result.data
 
-    job_result = db.table("job_descriptions").select("*").eq("id", app["job_description_id"]).single().execute()
+    job_result = (
+        db.table("job_descriptions")
+        .select("*")
+        .eq("id", app["job_description_id"])
+        .single()
+        .execute()
+    )
     job = job_result.data
 
-    profile_result = db.table("user_profiles").select("*").eq("user_id", str(user_id)).single().execute()
+    profile_result = (
+        db.table("user_profiles")
+        .select("*")
+        .eq("user_id", str(user_id))
+        .single()
+        .execute()
+    )
     profile = profile_result.data
 
     from ..services.email_drafter import email_drafter
@@ -242,7 +312,14 @@ async def send_email(
 ) -> SendResultResponse:
     db = _db()
 
-    campaign_result = db.table("outreach_campaigns").select("*").eq("id", str(campaign_id)).eq("user_id", str(user_id)).single().execute()
+    campaign_result = (
+        db.table("outreach_campaigns")
+        .select("*")
+        .eq("id", str(campaign_id))
+        .eq("user_id", str(user_id))
+        .single()
+        .execute()
+    )
     if not campaign_result.data:
         raise HTTPException(status_code=404, detail="Campaign not found")
     campaign = campaign_result.data
@@ -340,7 +417,9 @@ async def gmail_oauth_callback(code: str, state: str):
         encrypted = encrypt_oauth_token(token_data)
 
         db = _db()
-        db.table("user_profiles").update({"gmail_oauth_token": encrypted}).eq("user_id", user_id).execute()
+        db.table("user_profiles").update(
+            {"gmail_oauth_token": encrypted}
+        ).eq("user_id", user_id).execute()
 
         redirect_url = return_to or "/settings/connections"
         return RedirectResponse(url=f"{redirect_url}?oauth=success")
@@ -360,8 +439,13 @@ async def outlook_oauth_initiate(
         state_parts.append(urllib.parse.quote(safe_return, safe="/"))
 
     state = ":".join(state_parts)
+    ms_client_id = (
+        settings.MICROSOFT_OAUTH_CLIENT_ID
+        if hasattr(settings, "MICROSOFT_OAUTH_CLIENT_ID")
+        else ""
+    )
     params = urllib.parse.urlencode({
-        "client_id": settings.MICROSOFT_OAUTH_CLIENT_ID if hasattr(settings, "MICROSOFT_OAUTH_CLIENT_ID") else "",
+        "client_id": ms_client_id,
         "response_type": "code",
         "redirect_uri": f"{settings.FRONTEND_URL}/api/oauth/outlook/callback",
         "scope": "Mail.Send offline_access",
@@ -381,8 +465,16 @@ async def outlook_oauth_callback(code: str, state: str):
     if return_to and not return_to.startswith("/"):
         return_to = None
 
-    client_id = settings.MICROSOFT_OAUTH_CLIENT_ID if hasattr(settings, "MICROSOFT_OAUTH_CLIENT_ID") else ""
-    client_secret = settings.MICROSOFT_OAUTH_CLIENT_SECRET if hasattr(settings, "MICROSOFT_OAUTH_CLIENT_SECRET") else ""
+    client_id = (
+        settings.MICROSOFT_OAUTH_CLIENT_ID
+        if hasattr(settings, "MICROSOFT_OAUTH_CLIENT_ID")
+        else ""
+    )
+    client_secret = (
+        settings.MICROSOFT_OAUTH_CLIENT_SECRET
+        if hasattr(settings, "MICROSOFT_OAUTH_CLIENT_SECRET")
+        else ""
+    )
 
     try:
         async with httpx.AsyncClient() as client:
@@ -404,7 +496,9 @@ async def outlook_oauth_callback(code: str, state: str):
         })
 
         db = _db()
-        db.table("user_profiles").update({"outlook_oauth_token": encrypted}).eq("user_id", user_id).execute()
+        db.table("user_profiles").update(
+            {"outlook_oauth_token": encrypted}
+        ).eq("user_id", user_id).execute()
 
         redirect_url = return_to or "/settings/connections"
         return RedirectResponse(url=f"{redirect_url}?oauth=success")
@@ -416,7 +510,13 @@ async def outlook_oauth_callback(code: str, state: str):
 @oauth_router.get("/oauth/status")
 async def oauth_status(user_id: UUID = Depends(get_current_user)) -> OAuthStatusResponse:
     db = _db()
-    result = db.table("user_profiles").select("gmail_oauth_token, outlook_oauth_token").eq("user_id", str(user_id)).single().execute()
+    result = (
+        db.table("user_profiles")
+        .select("gmail_oauth_token, outlook_oauth_token")
+        .eq("user_id", str(user_id))
+        .single()
+        .execute()
+    )
     profile = result.data or {}
     return OAuthStatusResponse(
         gmail_connected=bool(profile.get("gmail_oauth_token")),
