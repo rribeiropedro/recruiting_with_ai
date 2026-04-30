@@ -1,5 +1,4 @@
 """Unit tests for ContactFinder service (app/services/contact_finder.py)."""
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
@@ -124,8 +123,8 @@ class TestHunterTitleScoring:
         assert result is None
 
     async def test_no_api_key_returns_none(self, monkeypatch):
-        from app.services.contact_finder import ContactFinder
         from app.config import settings
+        from app.services.contact_finder import ContactFinder
 
         monkeypatch.setattr(settings, "HUNTER_API_KEY", "")
         finder = ContactFinder()
@@ -178,8 +177,8 @@ class TestVerifyEmail:
         assert await finder._verify_email("test@example.com") is False
 
     async def test_no_api_key_returns_false(self, monkeypatch):
-        from app.services.contact_finder import ContactFinder
         from app.config import settings
+        from app.services.contact_finder import ContactFinder
 
         monkeypatch.setattr(settings, "HUNTER_API_KEY", "")
         finder = ContactFinder()
@@ -198,7 +197,12 @@ class TestApolloSearch:
                 "email": "alice@corp.com",
                 "linkedin_url": "linkedin.com/in/alice",
             },
-            {"name": "Bob Jones", "title": "VP Engineering", "email": "bob@corp.com", "linkedin_url": None},
+            {
+                "name": "Bob Jones",
+                "title": "VP Engineering",
+                "email": "bob@corp.com",
+                "linkedin_url": None,
+            },
         ]
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"people": people}
@@ -242,8 +246,8 @@ class TestApolloSearch:
         assert await finder._apollo_search("Corp", "Engineer") is None
 
     async def test_no_api_key_returns_none(self, monkeypatch):
-        from app.services.contact_finder import ContactFinder
         from app.config import settings
+        from app.services.contact_finder import ContactFinder
 
         monkeypatch.setattr(settings, "APOLLO_API_KEY", "")
         finder = ContactFinder()
