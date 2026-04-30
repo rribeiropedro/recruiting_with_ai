@@ -33,7 +33,8 @@ jobs:
 
       - name: Test
         # test_supabase_connection.py requires live Supabase — excluded from CI
-        run: pytest --ignore=tests/test_supabase_connection.py
+        # Exit 5 means no tests collected (base branch has none) — treat as pass
+        run: pytest --ignore=tests/test_supabase_connection.py || [ $? -eq 5 ]
 
   frontend:
     runs-on: ubuntu-latest
