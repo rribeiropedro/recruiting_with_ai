@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -67,7 +68,7 @@ class EmailDraftResponse(BaseModel):
     campaign_id: UUID
     email_subject: str
     email_body: str
-    company_context_used: dict
+    company_context_used: dict[str, Any]
     tone: str
 
 
