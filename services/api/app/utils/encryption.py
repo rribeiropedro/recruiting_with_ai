@@ -1,5 +1,7 @@
 import json
+
 from cryptography.fernet import Fernet
+
 from ..config import settings
 
 
