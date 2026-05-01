@@ -1,9 +1,13 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useOutreachStore } from "@/lib/stores/outreachStore"
-import type { CampaignResponse, CampaignStatus } from "@/lib/stores/outreachStore"
+import type {
+  CampaignResponse,
+  CampaignStatus,
+  RealtimeCampaignPayload,
+} from "@/lib/stores/outreachStore"
 import { KanbanBoard } from "@/components/crm/KanbanBoard"
 import { CampaignDetail } from "@/components/crm/CampaignDetail"
 import Link from "next/link"
@@ -14,10 +18,32 @@ export default function OutreachPage() {
   const [selected, setSelected] = useState<CampaignResponse | null>(null)
   const [gmailConnected, setGmailConnected] = useState(false)
 
+  const fetchOAuthStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/oauth/status")
+      if (res.ok) {
+        const data = await res.json()
+        setGmailConnected(data.gmail_connected)
+      }
+    } catch {}
+  }, [])
+
+  const initiateGmailOAuth = useCallback(async (returnTo?: string) => {
+    try {
+      const res = await fetch("/api/oauth/gmail/initiate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ return_to: returnTo }),
+      })
+      const { auth_url } = await res.json()
+      window.location.href = auth_url
+    } catch {}
+  }, [])
+
   useEffect(() => {
     fetchCampaigns()
     fetchOAuthStatus()
-  }, [])
+  }, [fetchCampaigns, fetchOAuthStatus])
 
   // Supabase Realtime subscription
   useEffect(() => {
@@ -35,38 +61,16 @@ export default function OutreachPage() {
             filter: `user_id=eq.${user.id}`,
           },
           (payload) => {
-            handleRealtimeUpdate(payload as {
-              eventType: string
-              new: CampaignResponse
-              old: { id: string }
+            handleRealtimeUpdate({
+              eventType: payload.eventType,
+              new: payload.new as RealtimeCampaignPayload["new"],
+              old: payload.old as RealtimeCampaignPayload["old"],
             })
           }
         )
         .subscribe()
     })
-  }, [])
-
-  async function fetchOAuthStatus() {
-    try {
-      const res = await fetch("/api/oauth/status")
-      if (res.ok) {
-        const data = await res.json()
-        setGmailConnected(data.gmail_connected)
-      }
-    } catch {}
-  }
-
-  async function initiateGmailOAuth(returnTo?: string) {
-    try {
-      const res = await fetch("/api/oauth/gmail/initiate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ return_to: returnTo }),
-      })
-      const { auth_url } = await res.json()
-      window.location.href = auth_url
-    } catch {}
-  }
+  }, [handleRealtimeUpdate])
 
   if (isLoading && campaigns.length === 0) {
     return (
@@ -81,7 +85,7 @@ export default function OutreachPage() {
       <div className="flex flex-col items-center justify-center h-64 gap-4 text-center">
         <p className="text-gray-500 text-sm">No outreach campaigns yet.</p>
         <p className="text-gray-400 text-xs max-w-xs">
-          Generate a resume for a job, then click "Send to Hiring Manager" to start your first campaign.
+          Generate a resume for a job, then click &quot;Send to Hiring Manager&quot; to start your first campaign.
         </p>
         <Link
           href="/generate"
