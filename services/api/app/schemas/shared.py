@@ -2,7 +2,7 @@ from datetime import date
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 
 class ExperienceNodeResult(BaseModel):
@@ -20,15 +20,23 @@ class ExperienceNodeResult(BaseModel):
 
 
 class JobRequirements(BaseModel):
-    company_name: str | None
-    role_title: str | None
-    technical_skills: list[str]
-    soft_skills: list[str]
-    responsibilities: list[str]
-    experience_years: int | None
-    education: str | None
-    nice_to_haves: list[str]
-    industry: str | None
+    company_name: str | None = None
+    role_title: str | None = None
+    technical_skills: list[str] = Field(default_factory=list)
+    soft_skills: list[str] = Field(default_factory=list)
+    responsibilities: list[str] = Field(default_factory=list)
+    experience_years: int | None = None
+    education: str | None = None
+    nice_to_haves: list[str] = Field(default_factory=list)
+    industry: str | None = None
+
+    @field_validator("experience_years", mode="before")
+    @classmethod
+    def parse_experience_years(cls, value: object) -> object:
+        if isinstance(value, str):
+            digits = "".join(char for char in value if char.isdigit())
+            return int(digits) if digits else None
+        return value
 
 
 class GeneratedApplicationSummary(BaseModel):
