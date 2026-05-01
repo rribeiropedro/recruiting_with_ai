@@ -1,9 +1,8 @@
 from datetime import date, datetime
-from typing import Literal
+from typing import Literal, Self
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
-
 
 NodeType = Literal[
     "work",
@@ -40,7 +39,7 @@ class _NodeDateValidation(BaseModel):
         return _parse_partial_date(value)
 
     @model_validator(mode="after")
-    def validate_date_order(self):
+    def validate_date_order(self) -> Self:
         if self.start_date and self.end_date and self.end_date < self.start_date:
             raise ValueError("end_date must be on or after start_date")
         return self
@@ -64,7 +63,7 @@ class NodeUpdateRequest(_NodeDateValidation):
     node_type: NodeType | None = None
 
     @model_validator(mode="after")
-    def validate_non_nullable_updates(self):
+    def validate_non_nullable_updates(self) -> Self:
         for field in ("title", "description", "bullet_points", "node_type"):
             if field in self.model_fields_set and getattr(self, field) is None:
                 raise ValueError(f"{field} cannot be null")
