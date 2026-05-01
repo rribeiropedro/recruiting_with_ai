@@ -45,6 +45,12 @@ export interface SendResultResponse {
   error: string | null
 }
 
+export interface RealtimeCampaignPayload {
+  eventType: string
+  new: Partial<CampaignResponse> | null
+  old: Partial<CampaignResponse> | null
+}
+
 interface OutreachStore {
   campaigns: CampaignResponse[]
   counts: Record<string, number>
@@ -56,10 +62,16 @@ interface OutreachStore {
   updateCampaign: (id: string, data: Partial<CampaignResponse>) => Promise<void>
   draftEmail: (id: string, tone?: string) => Promise<EmailDraftResponse>
   sendEmail: (id: string, provider?: string) => Promise<SendResultResponse>
-  handleRealtimeUpdate: (payload: { eventType: string; new: CampaignResponse; old: { id: string } }) => void
+  handleRealtimeUpdate: (payload: RealtimeCampaignPayload) => void
 }
 
 const API_BASE = "/api"
+
+function hasCampaignId(
+  campaign: Partial<CampaignResponse> | null | undefined
+): campaign is CampaignResponse {
+  return typeof campaign?.id === "string"
+}
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -132,13 +144,13 @@ export const useOutreachStore = create<OutreachStore>((set, get) => ({
   },
 
   handleRealtimeUpdate: ({ eventType, new: updated, old }) => {
-    if (eventType === "INSERT") {
+    if (eventType === "INSERT" && hasCampaignId(updated)) {
       set((s) => ({ campaigns: [updated, ...s.campaigns] }))
-    } else if (eventType === "UPDATE") {
+    } else if (eventType === "UPDATE" && hasCampaignId(updated)) {
       set((s) => ({
         campaigns: s.campaigns.map((c) => (c.id === updated.id ? updated : c)),
       }))
-    } else if (eventType === "DELETE") {
+    } else if (eventType === "DELETE" && old?.id) {
       set((s) => ({ campaigns: s.campaigns.filter((c) => c.id !== old.id) }))
     }
   },
