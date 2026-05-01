@@ -40,8 +40,12 @@ JOB_COLUMNS = """
     role_title,
     requirements::text AS requirements,
     (embedding IS NOT NULL) AS is_embedded,
+    status,
+    error_message,
+    celery_task_id,
     scraped_at,
-    created_at
+    created_at,
+    updated_at
 """
 
 
@@ -130,7 +134,9 @@ async def _update_job_scrape_result(
             UPDATE job_descriptions
             SET raw_html = $3,
                 raw_text = $4,
-                scraped_at = $5
+                scraped_at = $5,
+                status = 'extracting',
+                error_message = NULL
             WHERE id = $1 AND user_id = $2
             """,
             UUID(str(job_id)),
@@ -153,7 +159,9 @@ async def _update_job_scrape_failure(
         await conn.execute(
             """
             UPDATE job_descriptions
-            SET raw_text = $3
+            SET raw_text = $3,
+                status = 'failed',
+                error_message = $3
             WHERE id = $1 AND user_id = $2
             """,
             UUID(str(job_id)),
@@ -178,7 +186,9 @@ async def _update_job_requirements_embedding(
             SET company_name = $3,
                 role_title = $4,
                 requirements = $5::jsonb,
-                embedding = $6::vector
+                embedding = $6::vector,
+                status = 'embedded',
+                error_message = NULL
             WHERE id = $1 AND user_id = $2
             """,
             UUID(str(job_id)),
@@ -192,12 +202,38 @@ async def _update_job_requirements_embedding(
         await conn.close()
 
 
-def dispatch_scrape_job(job_id: str | UUID) -> None:
-    scrape_job_task.apply_async(args=[str(job_id)], queue="heavy")
+async def _update_job_status(
+    job_id: str | UUID,
+    user_id: str | UUID,
+    status: str,
+    error_message: str | None = None,
+) -> None:
+    conn = await _connect_jobs()
+    try:
+        await conn.execute(
+            """
+            UPDATE job_descriptions
+            SET status = $3,
+                error_message = $4
+            WHERE id = $1 AND user_id = $2
+            """,
+            UUID(str(job_id)),
+            UUID(str(user_id)),
+            status,
+            error_message,
+        )
+    finally:
+        await conn.close()
 
 
-def dispatch_extract_and_embed_job(job_id: str | UUID) -> None:
-    extract_and_embed_task.apply_async(args=[str(job_id)], queue="default")
+def dispatch_scrape_job(job_id: str | UUID) -> str:
+    result = scrape_job_task.apply_async(args=[str(job_id)], queue="heavy")
+    return str(result.id)
+
+
+def dispatch_extract_and_embed_job(job_id: str | UUID) -> str:
+    result = extract_and_embed_task.apply_async(args=[str(job_id)], queue="default")
+    return str(result.id)
 
 
 @app.task(bind=True, max_retries=2, default_retry_delay=10, queue="heavy")  # type: ignore[untyped-decorator]
@@ -211,6 +247,7 @@ def scrape_job_task(self: Any, job_id: str) -> dict[str, Any] | None:
         return None
 
     user_id = UUID(str(job["user_id"]))
+    _run(_update_job_status(job["id"], user_id, "scraping"))
     try:
         cached_text = _get_cached_scrape(url)
         if cached_text:
@@ -251,6 +288,7 @@ def scrape_job_task(self: Any, job_id: str) -> dict[str, Any] | None:
             user_id=str(user_id),
             error=str(exc),
         )
+        _run(_update_job_status(job["id"], user_id, "failed", "Job scraping failed."))
         return {"status": "failed", "error_message": "Job scraping failed."}
 
     return {"status": "scraped", "method": result.method}
@@ -267,6 +305,7 @@ def extract_and_embed_task(self: Any, job_id: str) -> dict[str, Any] | None:
         return None
 
     user_id = UUID(str(job["user_id"]))
+    _run(_update_job_status(job["id"], user_id, "extracting"))
     try:
         requirements = _run(extract_job_requirements(raw_text, user_id))
         embedding = _run(embed_job_requirements(requirements, user_id))
@@ -280,6 +319,7 @@ def extract_and_embed_task(self: Any, job_id: str) -> dict[str, Any] | None:
             user_id=str(user_id),
             error=str(exc),
         )
+        _run(_update_job_status(job["id"], user_id, "failed", str(exc)))
         return {"status": "failed", "error_message": str(exc)}
     except Exception as exc:
         if self.request.retries < 2:
@@ -291,6 +331,7 @@ def extract_and_embed_task(self: Any, job_id: str) -> dict[str, Any] | None:
             user_id=str(user_id),
             error=str(exc),
         )
+        _run(_update_job_status(job["id"], user_id, "failed", "Job extraction failed."))
         return {"status": "failed", "error_message": "Job extraction failed."}
 
     return {"status": "embedded"}
