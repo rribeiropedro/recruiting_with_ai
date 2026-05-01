@@ -219,10 +219,11 @@ def _json_list(value: object) -> list[str]:
     if value is None:
         return []
     if isinstance(value, str):
+        raw_value = value
         try:
-            value = json.loads(value)
+            value = json.loads(raw_value)
         except json.JSONDecodeError:
-            return [value] if value.strip() else []
+            return [raw_value] if raw_value.strip() else []
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
