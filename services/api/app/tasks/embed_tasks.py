@@ -1,6 +1,8 @@
 import asyncio
 import json
 import re
+from collections.abc import Coroutine
+from typing import Any
 
 import structlog
 from celery import chain
@@ -16,8 +18,7 @@ from .celery_app import app
 
 logger = structlog.get_logger()
 
-
-def _run(coro):
+def _run[T](coro: Coroutine[Any, Any, T]) -> T:
     return asyncio.run(coro)
 
 
@@ -54,8 +55,8 @@ def dispatch_node_processing(node_id: str) -> None:
         logger.error("vault_node_processing_dispatch_failed", node_id=str(node_id), error=str(exc))
 
 
-@app.task(bind=True, max_retries=3, default_retry_delay=5, queue="default")
-def tag_node_task(self, node_id: str):
+@app.task(bind=True, max_retries=3, default_retry_delay=5, queue="default")  # type: ignore[untyped-decorator]
+def tag_node_task(self: Any, node_id: str) -> list[str] | None:
     node = _run(get_node_for_processing(node_id))
     if not node:
         return None
@@ -87,8 +88,8 @@ def tag_node_task(self, node_id: str):
     return tags
 
 
-@app.task(bind=True, max_retries=3, default_retry_delay=10, queue="default")
-def embed_node_task(self, node_id: str):
+@app.task(bind=True, max_retries=3, default_retry_delay=10, queue="default")  # type: ignore[untyped-decorator]
+def embed_node_task(self: Any, node_id: str) -> bool | None:
     node = _run(get_node_for_processing(node_id))
     if not node:
         return None

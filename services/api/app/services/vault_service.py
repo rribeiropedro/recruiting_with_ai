@@ -10,7 +10,6 @@ from ..config import settings
 from ..schemas.shared import ExperienceNodeResult
 from ..schemas.vault import NodeCreateRequest, NodeListResponse, NodeResponse, NodeUpdateRequest
 
-
 CONTENT_FIELDS = {"title", "organization", "role", "description", "bullet_points"}
 
 NODE_COLUMNS = """

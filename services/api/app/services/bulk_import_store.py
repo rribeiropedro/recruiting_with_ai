@@ -1,5 +1,5 @@
 import json
-from typing import Any
+from typing import Any, cast
 
 import redis
 
@@ -43,7 +43,7 @@ def set_import_status(
 
 
 def get_import_status(task_id: str) -> dict[str, Any] | None:
-    raw = _client().get(_status_key(task_id))
+    raw = cast(str | bytes | bytearray | None, _client().get(_status_key(task_id)))
     return json.loads(raw) if raw else None
 
 
@@ -60,5 +60,5 @@ def set_import_preview(
 
 
 def get_import_preview(task_id: str) -> dict[str, Any] | None:
-    raw = _client().get(_preview_key(task_id))
+    raw = cast(str | bytes | bytearray | None, _client().get(_preview_key(task_id)))
     return json.loads(raw) if raw else None

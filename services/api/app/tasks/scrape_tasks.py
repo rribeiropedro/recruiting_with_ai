@@ -1,7 +1,9 @@
 import asyncio
 import json
 import re
+from collections.abc import Coroutine
 from io import BytesIO
+from typing import Any
 from uuid import UUID
 
 import structlog
@@ -16,7 +18,6 @@ from .celery_app import app
 
 logger = structlog.get_logger()
 
-
 class ResumeExtractionError(Exception):
     pass
 
@@ -25,7 +26,7 @@ class BulkImportParseError(Exception):
     pass
 
 
-def _run(coro):
+def _run[T](coro: Coroutine[Any, Any, T]) -> T:
     return asyncio.run(coro)
 
 
@@ -95,8 +96,8 @@ def extract_pdf_text(pdf_bytes: bytes) -> str:
     return cleaned
 
 
-@app.task(bind=True, max_retries=1, queue="heavy")
-def bulk_import_task(self, user_id: str, storage_path: str):
+@app.task(bind=True, max_retries=1, queue="heavy")  # type: ignore[untyped-decorator]
+def bulk_import_task(self: Any, user_id: str, storage_path: str) -> dict[str, Any]:
     task_id = self.request.id
     set_import_status(task_id, status="parsing", user_id=user_id, storage_path=storage_path)
 
