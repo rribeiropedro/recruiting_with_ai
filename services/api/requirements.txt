@@ -19,6 +19,7 @@ weasyprint==61.2
 pybreaker==1.2.0
 python-multipart==0.0.12
 supabase==2.9.1
+pdfplumber==0.11.4
 
 pytest==8.3.4
 pytest-asyncio==0.24.0
