@@ -18,13 +18,9 @@ app.conf.update(
     task_soft_time_limit=240,
     worker_max_tasks_per_child=50,
     broker_connection_retry_on_startup=True,
-)
-
-app.autodiscover_tasks(
-    [
+    imports=(
         "app.tasks.embed_tasks",
-        "app.tasks.scrape_tasks",
-        "app.tasks.generate_tasks",
         "app.tasks.outreach_tasks",
-    ]
+        "app.tasks.scrape_tasks",
+    ),
 )

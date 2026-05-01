@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     CACHE_SIMILARITY_THRESHOLD: float = 0.88
     ENVIRONMENT: Literal["development", "production"] = "development"
     FRONTEND_URL: str = "http://localhost:3000"
+    SUPABASE_RESUME_BUCKET: str = "resumes"
 
 
 settings = Settings()  # type: ignore[call-arg]
