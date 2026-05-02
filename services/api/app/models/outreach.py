@@ -4,11 +4,8 @@ from uuid import uuid4
 from sqlalchemy import TIMESTAMP, Boolean, Column, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
-from sqlalchemy.orm import DeclarativeBase
 
-
-class Base(DeclarativeBase):
-    pass
+from .base import Base
 
 
 class OutreachCampaign(Base):
