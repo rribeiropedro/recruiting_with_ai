@@ -2,7 +2,7 @@ from datetime import date
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 
 class ExperienceNodeResult(BaseModel):
@@ -47,4 +47,6 @@ class GeneratedApplicationSummary(BaseModel):
     pdf_storage_path: str
     pdf_url: str
     tailored_content: dict[str, Any]
-    resume_text_summary: str
+    resume_text_summary: str = Field(
+        validation_alias=AliasChoices("resume_text_summary", "resume_summary")
+    )
